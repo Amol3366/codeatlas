@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -19,6 +20,7 @@ from app.answering.service import AnswerService
 from app.ingestion.pipeline import run_ingestion
 from app.models import (
     ChatRequest,
+    FileContentResponse,
     FilesResponse,
     IngestRequest,
     IngestResponse,
@@ -73,6 +75,45 @@ def files(query: str | None = None) -> FilesResponse:
         files=infos,
         total_files=len(infos),
         total_chunks=sum(info.chunk_count for info in infos),
+    )
+
+
+@app.get("/files/content", response_model=FileContentResponse)
+def file_content(path: str) -> FileContentResponse:
+    """Return the raw text of one indexed file for the source preview (§7a).
+
+    Only files present in the index are served; the relative path is resolved
+    against the last successful ingest root and traversal outside it is
+    rejected. Absolute paths never enter or leave the index (CLAUDE.md §5).
+    """
+    services = get_services()
+    infos = [info for info in services.vector_store.file_infos() if info.path == path]
+    if not infos:
+        raise HTTPException(status_code=404, detail=f"Not an indexed file: {path}")
+    info = infos[0]
+
+    last_index = services.status.snapshot().last_successful_index
+    if last_index is None:
+        raise HTTPException(status_code=409, detail="No successful index recorded yet")
+
+    root = Path(last_index.path).resolve()
+    abs_path = (root / path).resolve()
+    if root not in abs_path.parents and abs_path != root:
+        raise HTTPException(status_code=400, detail="Path escapes the indexed repo root")
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail=f"File no longer exists on disk: {path}")
+
+    try:
+        content = abs_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read file: {exc}") from exc
+
+    return FileContentResponse(
+        repo=info.repo,
+        path=path,
+        language=info.language,
+        content=content,
+        total_lines=content.count("\n") + 1,
     )
 
 

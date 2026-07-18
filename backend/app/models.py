@@ -154,6 +154,21 @@ class FilesResponse(BaseModel):
     total_chunks: int = 0
 
 
+class FileContentResponse(BaseModel):
+    """Response of ``GET /files/content`` — raw text for a source preview.
+
+    Additive helper endpoint for the frontend's code preview (CLAUDE.md §7a);
+    the path is relative to the indexed repo root, resolved to an absolute
+    location only at read-time (CLAUDE.md §5).
+    """
+
+    repo: str
+    path: str
+    language: str | None
+    content: str
+    total_lines: int
+
+
 class ChatRequest(BaseModel):
     """Body of ``POST /chat``."""
 

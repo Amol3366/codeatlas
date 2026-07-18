@@ -55,6 +55,23 @@ def test_files_query_filter(client: TestClient, repo: Path) -> None:
     assert {item["path"] for item in files["files"]} == {"auth.py"}
 
 
+def test_file_content_returns_indexed_file(client: TestClient, repo: Path) -> None:
+    client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
+    response = client.get("/files/content", params={"path": "auth.py"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == "auth.py"
+    assert body["language"] == "python"
+    assert "def create_session" in body["content"]
+    assert body["total_lines"] == (repo / "auth.py").read_text(encoding="utf-8").count("\n") + 1
+
+
+def test_file_content_rejects_unindexed_and_traversal(client: TestClient, repo: Path) -> None:
+    client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
+    assert client.get("/files/content", params={"path": "nope.py"}).status_code == 404
+    assert client.get("/files/content", params={"path": "../secrets.txt"}).status_code == 404
+
+
 def test_chat_streams_and_cites_grounded_sources(client: TestClient, repo: Path) -> None:
     client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
     response = client.post("/chat", json={"question": "how are user sessions created"})
