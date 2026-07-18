@@ -64,7 +64,7 @@ def _build_spec(root: Path, extra_ignores: Sequence[str] | None) -> pathspec.Pat
         lines.extend(gitignore.read_text(encoding="utf-8", errors="ignore").splitlines())
     if extra_ignores:
         lines.extend(extra_ignores)
-    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+    return pathspec.PathSpec.from_lines("gitignore", lines)
 
 
 def walk_repo(root: Path, extra_ignores: Sequence[str] | None = None) -> Iterator[Path]:

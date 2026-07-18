@@ -19,7 +19,13 @@ from app.stores.vector_store import ChromaVectorStore
 class Services:
     """Process-wide container of interface implementations."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        embedder: Embedder | None = None,
+        llm: LLMClient | None = None,
+    ) -> None:
         self.settings = settings or get_settings()
         self.settings.ensure_dirs()
         self.vector_store: VectorStore = ChromaVectorStore(self.settings.chroma_persist_dir)
@@ -28,8 +34,9 @@ class Services:
         )
         self.chunker: Chunker = CompositeChunker()
         self.status = StatusTracker(self.settings.data_dir / "status.json")
-        self._embedder: Embedder | None = None
-        self._llm: LLMClient | None = None
+        # Optional injected implementations (used by tests to avoid live OpenAI).
+        self._embedder: Embedder | None = embedder
+        self._llm: LLMClient | None = llm
 
     @property
     def embedder(self) -> Embedder:
