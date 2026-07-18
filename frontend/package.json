@@ -1,0 +1,16 @@
+{
+  "name": "codeatlas-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeAtlas Next.js chat UI (scaffold — app implemented in a later task).",
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  }
+}

@@ -1,0 +1,10 @@
+[project]
+# Optional pure-Python Gradio prototype (CLAUDE.md §7b). Declared as a workspace
+# member so it shares the single root .venv / uv.lock. Dependencies (gradio,
+# an HTTP client) are added when the prototype is implemented in a later task —
+# it is a THIN client of the FastAPI backend and re-implements nothing.
+name = "codeatlas-prototype-gradio"
+version = "0.1.0"
+description = "Optional thin Gradio frontend for CodeAtlas (calls the FastAPI backend)."
+requires-python = "==3.12.*"
+dependencies = []

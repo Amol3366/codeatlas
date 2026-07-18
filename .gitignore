@@ -1,0 +1,36 @@
+# ---- Secrets & environment ----------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---- Python -------------------------------------------------------------
+# Single shared workspace venv lives at the repo root; the glob also guards
+# against any accidental per-member venvs.
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ---- Data / indexes -----------------------------------------------------
+data/
+*.sqlite3
+chroma/
+
+# ---- Node / frontend ----------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# ---- Editor / OS --------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.log

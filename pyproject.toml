@@ -1,0 +1,51 @@
+[project]
+# Virtual workspace root for the whole CodeAtlas monorepo. It is NOT a
+# distributable package (no [build-system]) — uv installs its dependencies into
+# a SINGLE shared .venv at the repo root, so backend and prototype-gradio never
+# drift apart. See CLAUDE.md §8 / §10.
+name = "codeatlas"
+version = "0.1.0"
+description = "CodeAtlas monorepo workspace root — one shared Python environment for all members."
+requires-python = "==3.12.*"
+dependencies = [
+    "codeatlas-backend",
+]
+
+[project.optional-dependencies]
+# Offline embedding fallback (PyTorch). NOT installed by default.
+# Enable with: `uv sync --extra local`
+local = [
+    "codeatlas-backend[local]",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.22",
+]
+
+[tool.uv.workspace]
+members = ["backend", "prototype-gradio"]
+
+[tool.uv.sources]
+codeatlas-backend = { workspace = true }
+
+# ---- Shared tooling config (applies across the whole repo) --------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
