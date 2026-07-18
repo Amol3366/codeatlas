@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Mapping, Sequence
 
-from app.models import ChatMessage, Chunk, RetrievedChunk, SourceFile
+from app.models import ChatMessage, Chunk, FileInfo, RetrievedChunk, SourceFile
 
 
 class Embedder(ABC):
@@ -49,6 +49,14 @@ class VectorStore(ABC):
         filters: Mapping[str, object] | None = None,
     ) -> list[RetrievedChunk]:
         """Return the ``k`` nearest chunks to ``query_vector``."""
+
+    @abstractmethod
+    def count(self) -> int:
+        """Return the total number of indexed chunks."""
+
+    @abstractmethod
+    def file_infos(self, path_query: str | None = None) -> list[FileInfo]:
+        """Aggregate indexed chunks into per-file records (``GET /files``)."""
 
 
 class KeywordIndex(ABC):
