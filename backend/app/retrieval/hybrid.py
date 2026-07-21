@@ -7,6 +7,7 @@ the optional query-expansion and rerank stages when their flags are enabled.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from app.models import RetrievedChunk
@@ -16,6 +17,32 @@ from app.services import Services
 
 # Reciprocal Rank Fusion constant; 60 is the value from the original RRF paper.
 _RRF_K = 60
+_CODE_QUERY_TERMS = frozenset(
+    {
+        "api",
+        "bug",
+        "class",
+        "code",
+        "component",
+        "config",
+        "debug",
+        "endpoint",
+        "error",
+        "exception",
+        "function",
+        "implementation",
+        "method",
+        "module",
+        "route",
+        "service",
+        "source",
+        "stack",
+        "trace",
+    }
+)
+_IMPLEMENTATION_PHRASE_RE = re.compile(
+    r"\b(where|how)\b.*\b(called|defined|handled|implemented|wired|used)\b"
+)
 
 
 def reciprocal_rank_fusion(
@@ -32,6 +59,33 @@ def reciprocal_rank_fusion(
             chunks.setdefault(chunk_id, retrieved)
     ranked_ids = sorted(fused_scores, key=lambda cid: fused_scores[cid], reverse=True)
     return [RetrievedChunk(chunk=chunks[cid].chunk, score=fused_scores[cid]) for cid in ranked_ids]
+
+
+def looks_like_code_question(question: str) -> bool:
+    """Return True when the user is probably asking about implementation."""
+    lowered = question.lower()
+    tokens = {token.strip(".,:;!?()[]{}'\"`") for token in lowered.split()}
+    if tokens & _CODE_QUERY_TERMS:
+        return True
+    if _IMPLEMENTATION_PHRASE_RE.search(lowered):
+        return True
+    return any(marker in lowered for marker in ("()", ".py", ".js", ".ts", ".tsx", ".jsx"))
+
+
+def prioritize_code_sources(
+    question: str, results: Sequence[RetrievedChunk]
+) -> list[RetrievedChunk]:
+    """Nudge code chunks above docs for implementation questions."""
+    if not looks_like_code_question(question):
+        return list(results)
+    return sorted(
+        results,
+        key=lambda result: (
+            result.chunk.kind != "code",
+            result.chunk.symbol_name is None,
+            -result.score,
+        ),
+    )
 
 
 class HybridRetriever:
@@ -58,6 +112,8 @@ class HybridRetriever:
 
         merged = reciprocal_rank_fusion([semantic, keyword])
 
-        if settings.enable_llm_rerank and merged:
-            return rerank(question, merged, self._services.llm, settings.retrieval_top_k)
-        return merged[: settings.retrieval_top_k]
+        prioritized = prioritize_code_sources(question, merged)
+
+        if settings.enable_llm_rerank and prioritized:
+            return rerank(question, prioritized, self._services.llm, settings.retrieval_top_k)
+        return prioritized[: settings.retrieval_top_k]

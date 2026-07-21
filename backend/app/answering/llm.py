@@ -16,8 +16,20 @@ from app.interfaces import LLMClient
 from app.models import ChatMessage, Chunk
 
 if TYPE_CHECKING:
-    from openai import AsyncOpenAI, AsyncStream, OpenAI
-    from openai.types.chat import ChatCompletionChunk
+    from openai import AsyncOpenAI, OpenAI
+    from openai.types.chat import ChatCompletionMessageParam
+
+
+def _temperature_kwargs(model: str, temperature: float) -> dict[str, float]:
+    """Return temperature kwargs only for models that accept custom values."""
+    if model.startswith("gpt-5"):
+        return {}
+    return {"temperature": temperature}
+
+
+def _supports_custom_temperature(model: str) -> bool:
+    """Return whether the model accepts non-default temperature values."""
+    return bool(_temperature_kwargs(model, 0.0))
 
 
 class OpenAILLMClient(LLMClient):
@@ -57,13 +69,20 @@ class OpenAILLMClient(LLMClient):
     ) -> AsyncIterator[str]:
         client = self._get_async_client()
         messages = build_answer_messages(question, context_chunks, history)
-        stream = await client.chat.completions.create(
-            model=self._model,
-            messages=messages,  # type: ignore[arg-type]
-            temperature=0.0,
-            stream=True,
-        )
-        stream = cast("AsyncStream[ChatCompletionChunk]", stream)
+        typed_messages = cast("Sequence[ChatCompletionMessageParam]", messages)
+        if _supports_custom_temperature(self._model):
+            stream = await client.chat.completions.create(
+                model=self._model,
+                messages=typed_messages,
+                stream=True,
+                temperature=0.0,
+            )
+        else:
+            stream = await client.chat.completions.create(
+                model=self._model,
+                messages=typed_messages,
+                stream=True,
+            )
         async for event in stream:
             if not event.choices:
                 continue
@@ -73,11 +92,22 @@ class OpenAILLMClient(LLMClient):
 
     def complete(self, prompt: str, *, model: str | None = None, temperature: float = 0.0) -> str:
         client = self._get_sync_client()
-        response = client.chat.completions.create(
-            model=model or self._enrichment_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
+        selected_model = model or self._enrichment_model
+        messages = cast(
+            "Sequence[ChatCompletionMessageParam]",
+            [{"role": "user", "content": prompt}],
         )
+        if _supports_custom_temperature(selected_model):
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=messages,
+                temperature=temperature,
+            )
+        else:
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=messages,
+            )
         return response.choices[0].message.content or ""
 
 

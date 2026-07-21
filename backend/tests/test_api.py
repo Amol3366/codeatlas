@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.services import Services
 from fastapi.testclient import TestClient
 
 
@@ -55,6 +56,23 @@ def test_files_query_filter(client: TestClient, repo: Path) -> None:
     assert {item["path"] for item in files["files"]} == {"auth.py"}
 
 
+def test_files_query_uses_manifest_without_slow_vector_fallback(
+    client: TestClient, repo: Path, services: Services, monkeypatch
+) -> None:
+    client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
+
+    def fail_file_infos(query=None):
+        raise AssertionError("vector store file scan should not be used")
+
+    monkeypatch.setattr(services.vector_store, "file_infos", fail_file_infos)
+
+    response = client.get("/files", params={"query": "missing"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["files"] == []
+    assert body["total_files"] == 0
+
+
 def test_file_content_returns_indexed_file(client: TestClient, repo: Path) -> None:
     client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
     response = client.get("/files/content", params={"path": "auth.py"})
@@ -64,6 +82,21 @@ def test_file_content_returns_indexed_file(client: TestClient, repo: Path) -> No
     assert body["language"] == "python"
     assert "def create_session" in body["content"]
     assert body["total_lines"] == (repo / "auth.py").read_text(encoding="utf-8").count("\n") + 1
+
+
+def test_file_content_uses_manifest_without_slow_vector_scan(
+    client: TestClient, repo: Path, services: Services, monkeypatch
+) -> None:
+    client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
+
+    def fail_file_infos(query=None):
+        raise AssertionError("vector store file scan should not be used")
+
+    monkeypatch.setattr(services.vector_store, "file_infos", fail_file_infos)
+
+    response = client.get("/files/content", params={"path": "auth.py"})
+    assert response.status_code == 200
+    assert "def create_session" in response.json()["content"]
 
 
 def test_file_content_rejects_unindexed_and_traversal(client: TestClient, repo: Path) -> None:
@@ -98,3 +131,31 @@ def test_chat_without_index_declines_without_fabricating_sources(client: TestCli
     final = next(event for event in events if event["type"] == "final")
     assert final["sources"] == []
     assert final["answer"]
+
+
+def test_chat_greeting_before_index_guides_user_to_index(client: TestClient) -> None:
+    response = client.post("/chat", json={"question": "Hi"})
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    final = next(event for event in events if event["type"] == "final")
+
+    assert final["sources"] == []
+    assert "Hi, I'm codeAtlas." in final["answer"]
+    assert "index a repository" in final["answer"]
+    assert "Index page" in final["answer"]
+
+
+def test_chat_greeting_after_index_invites_questions(
+    client: TestClient, repo: Path
+) -> None:
+    client.post("/ingest", json={"path": str(repo), "repo_label": "test"})
+    response = client.post("/chat", json={"question": "hello"})
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    final = next(event for event in events if event["type"] == "final")
+
+    assert final["sources"] == []
+    assert final["answer"] == (
+        "Hi, I'm codeAtlas. Ask me about your indexed codebase, and I'll "
+        "explain it with clickable source evidence from your files."
+    )

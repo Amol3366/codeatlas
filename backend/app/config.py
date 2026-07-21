@@ -9,6 +9,8 @@ https://platform.openai.com/docs/models
 
 from __future__ import annotations
 
+import shutil
+from contextlib import suppress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -50,18 +52,35 @@ class Settings(BaseSettings):
     # ---- Vector store (Chroma) & data ----------------------------------
     chroma_persist_dir: Path = REPO_ROOT / "data" / "chroma"
     data_dir: Path = REPO_ROOT / "data"
+    reset_index_on_start: bool = False
 
     # ---- Frontend -> backend -------------------------------------------
     next_public_api_base_url: str = "http://localhost:8000"
 
     # ---- Retrieval knobs (sensible v1 defaults) ------------------------
-    retrieval_top_k: int = 8
-    retrieval_candidate_k: int = 20
+    retrieval_top_k: int = 5
+    retrieval_candidate_k: int = 8
 
     def ensure_dirs(self) -> None:
         """Create the on-disk data directories if they do not yet exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+
+    def reset_index_data(self) -> None:
+        """Remove persisted local index data for a fresh development start."""
+        _safe_rmtree(self.chroma_persist_dir)
+        for filename in ("bm25_index.json", "file_manifest.json", "status.json"):
+            path = self.data_dir / filename
+            with suppress(FileNotFoundError):
+                path.unlink()
+
+
+def _safe_rmtree(path: Path) -> None:
+    """Delete a directory after rejecting obviously unsafe targets."""
+    resolved = path.resolve()
+    if resolved == resolved.parent or str(resolved) == resolved.anchor:
+        raise ValueError(f"Refusing to delete unsafe path: {resolved}")
+    shutil.rmtree(resolved, ignore_errors=True)
 
 
 @lru_cache

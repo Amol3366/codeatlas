@@ -37,8 +37,9 @@ const FILE_CONTENT = {
   total_lines: 10,
 };
 
-describe("ChatView smoke test (§12)", () => {
+describe("ChatView smoke test", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.stubGlobal(
       "fetch",
@@ -54,9 +55,10 @@ describe("ChatView smoke test (§12)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
-  it("streams an answer and renders clickable sources that open the preview", async () => {
+  it("streams an answer and renders an inline source link that opens the preview", async () => {
     render(<ChatView />);
 
     fireEvent.change(screen.getByLabelText("Question"), {
@@ -64,23 +66,73 @@ describe("ChatView smoke test (§12)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    // User turn appears immediately; streamed answer arrives via SSE.
-    expect(screen.getByText("where is auth handled?")).toBeInTheDocument();
+    expect(screen.getAllByText("where is auth handled?").length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(
         screen.getByText("Auth is handled in the session module."),
       ).toBeInTheDocument(),
     );
 
-    // The Sources panel lists the cited path with its line range.
-    const sourceButton = await screen.findByText("auth.py:5–9");
+    const sourceButton = await screen.findByRole("button", { name: "here" });
     fireEvent.click(sourceButton);
 
-    // The preview opens, fetches the file, and shows the cited line.
     await waitFor(() =>
       expect(screen.getByText("def create_session():")).toBeInTheDocument(),
     );
-    expect(screen.getByText("Lines 5–9 · create_session")).toBeInTheDocument();
+    expect(screen.getByText("Lines 5-9 - create_session")).toBeInTheDocument();
+  });
+
+  it("stores chats in local history", async () => {
+    render(<ChatView />);
+
+    fireEvent.change(screen.getByLabelText("Question"), {
+      target: { value: "where is auth handled?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText("where is auth handled?").length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText("where is auth handled?").length).toBeGreaterThan(1);
+  });
+
+  it("deletes a saved chat from local history", async () => {
+    window.localStorage.setItem(
+      "codeatlas.chat.sessions.v1",
+      JSON.stringify({
+        activeId: "first",
+        sessions: [
+          {
+            id: "first",
+            title: "Auth question",
+            updatedAt: 2,
+            messages: [],
+          },
+          {
+            id: "second",
+            title: "Install question",
+            updatedAt: 1,
+            messages: [],
+          },
+        ],
+      }),
+    );
+
+    render(<ChatView />);
+
+    await waitFor(() => expect(screen.getByText("Auth question")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Delete chat Auth question" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Auth question")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Install question")).toBeInTheDocument();
+
+    const stored = JSON.parse(
+      window.localStorage.getItem("codeatlas.chat.sessions.v1") ?? "{}",
+    ) as { activeId: string; sessions: Array<{ id: string }> };
+    expect(stored.activeId).toBe("second");
+    expect(stored.sessions).toHaveLength(1);
   });
 
   it("shows an error state when the backend is unreachable", async () => {

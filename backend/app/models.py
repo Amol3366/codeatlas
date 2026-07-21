@@ -141,6 +141,7 @@ class FileInfo(BaseModel):
 
     repo: str
     path: str
+    repo_root: str | None = None
     kind: Kind
     language: str | None
     chunk_count: int

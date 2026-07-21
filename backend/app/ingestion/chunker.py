@@ -11,6 +11,7 @@ never leak into the rest of the codebase.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -72,10 +73,39 @@ _NAME_NODE_TYPES: frozenset[str] = frozenset(
 _WINDOW_LINES = 60
 _WINDOW_OVERLAP = 10
 _MIN_GAP_LINES = 2
+_MAX_CHUNK_CHARS = 8000
 
 # Document splitter settings.
 _DOC_CHUNK_SIZE = 1000
 _DOC_CHUNK_OVERLAP = 150
+
+
+def _unique_chunk_id(
+    file: SourceFile,
+    start_line: int,
+    end_line: int,
+    content: str,
+    seen_ids: set[str],
+) -> str:
+    """Return a stable chunk id, disambiguating repeated line ranges.
+
+    The base id follows the repo/path/line-range contract. Some splitters can
+    emit multiple chunks from the same line range, such as a very long one-line
+    Markdown paragraph. In that case, add a deterministic content suffix so the
+    vector store receives unique IDs.
+    """
+    base_id = make_chunk_id(file.repo, file.path, start_line, end_line)
+    if base_id not in seen_ids:
+        seen_ids.add(base_id)
+        return base_id
+    suffix = hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
+    chunk_id = f"{base_id}:{suffix}"
+    counter = 1
+    while chunk_id in seen_ids:
+        counter += 1
+        chunk_id = f"{base_id}:{suffix}:{counter}"
+    seen_ids.add(chunk_id)
+    return chunk_id
 
 
 def _nearest_definitions(node: Node) -> list[Node]:
@@ -200,16 +230,46 @@ class CodeChunker:
     ) -> list[Chunk]:
         chunks: list[Chunk] = []
         seen: set[tuple[int, int]] = set()
+        seen_ids: set[str] = set()
         for start_line, end_line, symbol in sorted(spans):
             if end_line < start_line or (start_line, end_line) in seen:
                 continue
             content = "\n".join(lines[start_line - 1 : end_line])
             if not content.strip():
                 continue
+            if len(content) > _MAX_CHUNK_CHARS and end_line > start_line:
+                bounded_spans = [
+                    (sub_start, sub_end, symbol)
+                    for sub_start, sub_end, _ in _split_range(start_line, end_line, lines)
+                ]
+                for sub_start, sub_end, sub_symbol in bounded_spans:
+                    if (sub_start, sub_end) in seen:
+                        continue
+                    sub_content = "\n".join(lines[sub_start - 1 : sub_end])
+                    if not sub_content.strip():
+                        continue
+                    seen.add((sub_start, sub_end))
+                    chunks.append(
+                        Chunk(
+                            id=_unique_chunk_id(
+                                file, sub_start, sub_end, sub_content, seen_ids
+                            ),
+                            repo=file.repo,
+                            path=file.path,
+                            language=file.language,
+                            kind="code",
+                            symbol_name=sub_symbol,
+                            start_line=sub_start,
+                            end_line=sub_end,
+                            content=sub_content,
+                            commit_hash=file.commit_hash,
+                        )
+                    )
+                continue
             seen.add((start_line, end_line))
             chunks.append(
                 Chunk(
-                    id=make_chunk_id(file.repo, file.path, start_line, end_line),
+                    id=_unique_chunk_id(file, start_line, end_line, content, seen_ids),
                     repo=file.repo,
                     path=file.path,
                     language=file.language,
@@ -225,7 +285,7 @@ class CodeChunker:
 
 
 def _split_range(start: int, end: int, lines: list[str]) -> list[tuple[int, int, str | None]]:
-    """Split an inclusive 1-based line range into overlapping windows."""
+    """Split an inclusive 1-based line range into bounded windows."""
     if end < start:
         return []
     # Skip ranges that are entirely blank.
@@ -234,12 +294,29 @@ def _split_range(start: int, end: int, lines: list[str]) -> list[tuple[int, int,
     windows: list[tuple[int, int, str | None]] = []
     cursor = start
     while cursor <= end:
-        window_end = min(cursor + _WINDOW_LINES - 1, end)
+        window_end = _bounded_window_end(cursor, end, lines)
         windows.append((cursor, window_end, None))
         if window_end == end:
             break
         cursor = window_end - _WINDOW_OVERLAP + 1
+        if cursor <= windows[-1][0]:
+            cursor = windows[-1][0] + 1
     return windows
+
+
+def _bounded_window_end(start: int, end: int, lines: list[str]) -> int:
+    """Return a window end bounded by line count and approximate char count."""
+    hard_end = min(start + _WINDOW_LINES - 1, end)
+    char_count = 0
+    last_good = start
+    for line_no in range(start, hard_end + 1):
+        # Include one newline separator per line, matching the later join.
+        next_count = char_count + len(lines[line_no - 1]) + 1
+        if line_no > start and next_count > _MAX_CHUNK_CHARS:
+            break
+        char_count = next_count
+        last_good = line_no
+    return last_good
 
 
 class DocChunker:
@@ -249,6 +326,7 @@ class DocChunker:
         splitter = self._get_splitter(file.path)
         documents = splitter.create_documents([file.content])
         chunks: list[Chunk] = []
+        seen_ids: set[str] = set()
         for document in documents:
             start_index = int(document.metadata.get("start_index", 0))
             start_line = file.content.count("\n", 0, start_index) + 1
@@ -258,7 +336,7 @@ class DocChunker:
                 continue
             chunks.append(
                 Chunk(
-                    id=make_chunk_id(file.repo, file.path, start_line, end_line),
+                    id=_unique_chunk_id(file, start_line, end_line, content, seen_ids),
                     repo=file.repo,
                     path=file.path,
                     language=None,

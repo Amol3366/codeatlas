@@ -10,11 +10,7 @@ interface PreviewState {
   lines: string[];
 }
 
-/**
- * Slide-over code preview for a cited source (§7a): fetches the file via
- * GET /files/content, renders numbered lines, highlights the cited range,
- * and scrolls it into view.
- */
+/** Slide-over code preview for a cited source. */
 export function SourcePreview({
   source,
   onClose,
@@ -29,8 +25,6 @@ export function SourcePreview({
   });
   const citedRef = useRef<HTMLTableRowElement | null>(null);
 
-  // The component is mounted with key={source.path}, so a new file starts
-  // fresh from the initial loading state — no synchronous reset needed here.
   useEffect(() => {
     let cancelled = false;
     fetchFileContent(source.path)
@@ -80,21 +74,21 @@ export function SourcePreview({
           <div className="min-w-0">
             <p className="truncate font-mono text-[13px] font-medium">{source.path}</p>
             <p className="text-[12px] text-ink-soft">
-              Lines {source.start_line}–{source.end_line}
-              {source.symbol_name ? ` · ${source.symbol_name}` : ""}
+              Lines {source.start_line}-{source.end_line}
+              {source.symbol_name ? ` - ${source.symbol_name}` : ""}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2.5 py-1 text-sm text-ink-soft hover:bg-paper hover:text-ink"
+            className="rounded-md px-2.5 py-1 text-sm text-ink-soft hover:bg-hover hover:text-ink"
           >
             Close
           </button>
         </header>
         <div className="flex-1 overflow-auto">
           {state.loading ? (
-            <p className="p-5 text-sm text-ink-soft">Loading file…</p>
+            <p className="p-5 text-sm text-ink-soft">Loading file...</p>
           ) : state.error !== null ? (
             <p role="alert" className="p-5 text-sm text-danger">
               {state.error}

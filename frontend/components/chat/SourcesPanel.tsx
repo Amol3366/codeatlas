@@ -2,15 +2,12 @@
 
 import type { Source } from "@/lib/types";
 
-/** Human label like `src/auth/session.py:42–88`. */
+/** Human label like `src/auth/session.py:42-88`. */
 export function sourceLabel(source: Source): string {
-  return `${source.path}:${source.start_line}–${source.end_line}`;
+  return `${source.path}:${source.start_line}-${source.end_line}`;
 }
 
-/**
- * The clickable citations list rendered beside an assistant answer (§7a).
- * Clicking a source opens the code preview scrolled to the cited lines.
- */
+/** Clickable source list retained for focused source-list displays. */
 export function SourcesPanel({
   sources,
   onOpen,
@@ -30,7 +27,7 @@ export function SourcesPanel({
             <button
               type="button"
               onClick={() => onOpen(source)}
-              className="group flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left font-mono text-[12.5px] text-accent hover:bg-accent-soft"
+              className="group flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left font-mono text-[12.5px] text-accent hover:bg-hover"
             >
               <span className="truncate underline-offset-2 group-hover:underline">
                 {sourceLabel(source)}

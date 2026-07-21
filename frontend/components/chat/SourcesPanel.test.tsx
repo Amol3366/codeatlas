@@ -16,8 +16,8 @@ const SOURCES: Source[] = [
 describe("SourcesPanel", () => {
   it("renders one clickable entry per source with path and line range", () => {
     render(<SourcesPanel sources={SOURCES} onOpen={() => {}} />);
-    expect(screen.getByText("src/auth/session.py:42–88")).toBeInTheDocument();
-    expect(screen.getByText("README.md:1–12")).toBeInTheDocument();
+    expect(screen.getByText("src/auth/session.py:42-88")).toBeInTheDocument();
+    expect(screen.getByText("README.md:1-12")).toBeInTheDocument();
     expect(screen.getByText("create_session")).toBeInTheDocument();
   });
 

@@ -49,6 +49,16 @@ def test_unsupported_language_falls_back_to_line_windows() -> None:
     assert all(chunk.start_line >= 1 and chunk.end_line >= chunk.start_line for chunk in chunks)
 
 
+def test_large_semantic_code_chunk_is_split_before_embedding_limit() -> None:
+    long_body = "\n".join(f"    value_{index} = '{'x' * 180}'" for index in range(120))
+    content = f"def big_function():\n{long_body}\n    return value_119\n"
+    chunks = CodeChunker().chunk(_code_file(content))
+
+    big_chunks = [chunk for chunk in chunks if chunk.symbol_name == "big_function"]
+    assert len(big_chunks) > 1
+    assert all(len(chunk.content) <= 8500 for chunk in big_chunks)
+
+
 def test_doc_chunker_produces_doc_chunks_with_line_numbers() -> None:
     doc_file = SourceFile(
         repo="test",
@@ -66,3 +76,22 @@ def test_doc_chunker_produces_doc_chunks_with_line_numbers() -> None:
         assert chunk.language is None
         assert 1 <= chunk.start_line <= total_lines
         assert chunk.end_line >= chunk.start_line
+
+
+def test_doc_chunker_disambiguates_repeated_line_ranges() -> None:
+    content = " ".join(f"word{index}" for index in range(900))
+    doc_file = SourceFile(
+        repo="test",
+        path="LONG.md",
+        abs_path="/abs/LONG.md",
+        content=content,
+        language=None,
+        kind="doc",
+    )
+
+    chunks = DocChunker().chunk(doc_file)
+    ids = [chunk.id for chunk in chunks]
+
+    assert len(chunks) > 1
+    assert all(chunk.start_line == 1 and chunk.end_line == 1 for chunk in chunks)
+    assert len(ids) == len(set(ids))

@@ -7,11 +7,14 @@ OpenAI key. Swapping a provider means changing only this module.
 
 from __future__ import annotations
 
+import threading
+
 from app.config import Settings, get_settings
 from app.embeddings import get_embedder
 from app.ingestion.chunker import CompositeChunker
 from app.interfaces import Chunker, Embedder, KeywordIndex, LLMClient, VectorStore
 from app.status import StatusTracker
+from app.stores.file_manifest import FileManifest
 from app.stores.keyword_index import BM25KeywordIndex
 from app.stores.vector_store import ChromaVectorStore
 
@@ -27,11 +30,14 @@ class Services:
         llm: LLMClient | None = None,
     ) -> None:
         self.settings = settings or get_settings()
+        if self.settings.reset_index_on_start:
+            self.settings.reset_index_data()
         self.settings.ensure_dirs()
         self.vector_store: VectorStore = ChromaVectorStore(self.settings.chroma_persist_dir)
         self.keyword_index: KeywordIndex = BM25KeywordIndex(
             self.settings.data_dir / "bm25_index.json"
         )
+        self.file_manifest = FileManifest(self.settings.data_dir / "file_manifest.json")
         self.chunker: Chunker = CompositeChunker()
         self.status = StatusTracker(self.settings.data_dir / "status.json")
         # Optional injected implementations (used by tests to avoid live OpenAI).
@@ -54,13 +60,16 @@ class Services:
 
 
 _services: Services | None = None
+_services_lock = threading.Lock()
 
 
 def get_services() -> Services:
     """Return the process-wide :class:`Services` singleton."""
     global _services
     if _services is None:
-        _services = Services()
+        with _services_lock:
+            if _services is None:
+                _services = Services()
     return _services
 
 

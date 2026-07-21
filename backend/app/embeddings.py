@@ -19,6 +19,16 @@ if TYPE_CHECKING:
 
 # Max inputs per OpenAI embeddings request; large corpora are sent in batches.
 _OPENAI_BATCH_SIZE = 128
+# Keep each embedding request comfortably below the 8192-token per-input limit
+# of the small embedding models. This is a character cap rather than token
+# counting because the project does not depend on a tokenizer; 8k ASCII chars is
+# conservative for code/docs and prevents one huge chunk from failing ingestion.
+_MAX_OPENAI_EMBEDDING_CHARS = 8000
+
+
+def _embedding_input(text: str) -> str:
+    """Return text bounded for OpenAI embeddings without mutating stored chunks."""
+    return text[:_MAX_OPENAI_EMBEDDING_CHARS]
 
 
 class OpenAIEmbedder(Embedder):
@@ -47,7 +57,7 @@ class OpenAIEmbedder(Embedder):
         client = self._get_client()
         vectors: list[list[float]] = []
         for start in range(0, len(texts), _OPENAI_BATCH_SIZE):
-            batch = list(texts[start : start + _OPENAI_BATCH_SIZE])
+            batch = [_embedding_input(text) for text in texts[start : start + _OPENAI_BATCH_SIZE]]
             response = client.embeddings.create(model=self._model, input=batch)
             vectors.extend(item.embedding for item in response.data)
         return vectors

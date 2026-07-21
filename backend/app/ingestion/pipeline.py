@@ -52,6 +52,7 @@ def run_ingestion(services: Services, path: str, repo_label: str, job_id: str) -
             vectors = services.embedder.embed([chunk.embedding_text() for chunk in chunks])
             services.vector_store.upsert(chunks, vectors)
             services.keyword_index.add(chunks)
+            services.file_manifest.upsert_file(source_file, root, chunks)
             files_indexed += 1
             chunks_indexed += len(chunks)
             status.update(

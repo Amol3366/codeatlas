@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from app.ingestion.pipeline import run_ingestion
@@ -40,3 +41,30 @@ def test_pipeline_reports_failure_for_missing_path(services: Services, tmp_path:
     snapshot = services.status.snapshot()
     assert snapshot.state == "failed"
     assert snapshot.error is not None
+
+
+def test_pipeline_indexes_mixed_code_and_document_extensions(
+    services: Services, tmp_path: Path
+) -> None:
+    from docx import Document
+
+    repo = tmp_path / "mixed"
+    repo.mkdir()
+    (repo / "app.py").write_text("def run():\n    return 'ok'\n", encoding="utf-8")
+    (repo / "component.tsx").write_text(
+        "export function Component() { return <div>Hello</div>; }\n",
+        encoding="utf-8",
+    )
+    (repo / "notes.projectnote").write_text("Custom text notes", encoding="utf-8")
+    (repo / "analysis.ipynb").write_text(
+        json.dumps({"cells": [{"cell_type": "code", "source": ["print('ok')"]}]}),
+        encoding="utf-8",
+    )
+    document = Document()
+    document.add_paragraph("DOCX project plan")
+    document.save(repo / "plan.docx")
+
+    run_ingestion(services, str(repo), "mixed", "job-5")
+
+    paths = {info.path for info in services.vector_store.file_infos()}
+    assert {"app.py", "component.tsx", "notes.projectnote", "analysis.ipynb", "plan.docx"} <= paths

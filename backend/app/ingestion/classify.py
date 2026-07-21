@@ -39,26 +39,99 @@ CODE_LANGUAGES: dict[str, str] = {
     ".bash": "bash",
     ".sql": "sql",
     ".css": "css",
+    ".scss": "scss",
+    ".less": "css",
     ".html": "html",
+    ".htm": "html",
     ".json": "json",
+    ".jsonl": "json",
     ".yaml": "yaml",
     ".yml": "yaml",
     ".toml": "toml",
+    ".xml": "xml",
+    ".dockerfile": "dockerfile",
 }
 
-# Document extensions. Text-based ones are parsed; binary formats (pdf/docx) are
-# classified as documents but require extra parsers (skipped with a warning).
+# Source-like extensions without a reliable parser in the current dependency
+# set. They are still indexed as code through the line-window fallback.
+CODE_EXTENSIONS_WITHOUT_LANGUAGE: set[str] = {
+    ".bat",
+    ".cmd",
+    ".conf",
+    ".config",
+    ".env",
+    ".gradle",
+    ".graphql",
+    ".ini",
+    ".lock",
+    ".lua",
+    ".make",
+    ".mk",
+    ".pl",
+    ".ps1",
+    ".r",
+    ".sol",
+    ".tf",
+    ".vue",
+    ".svelte",
+}
+
+# Document extensions. Text documents are read directly; PDF/DOCX/IPYNB have
+# dedicated readers.
 DOC_EXTENSIONS: set[str] = {
     ".md",
     ".markdown",
+    ".mdx",
     ".rst",
     ".txt",
+    ".csv",
+    ".tsv",
+    ".log",
     ".ipynb",
     ".pdf",
     ".docx",
 }
 
 TEXT_DOC_EXTENSIONS: set[str] = {".md", ".markdown", ".rst", ".txt"}
+
+# Obvious non-text formats. Unknown extensions not listed here are attempted as
+# UTF-8 text so project-specific files can still be indexed.
+BINARY_EXTENSIONS: set[str] = {
+    ".7z",
+    ".avi",
+    ".bin",
+    ".bmp",
+    ".db",
+    ".dll",
+    ".dmg",
+    ".doc",
+    ".eot",
+    ".exe",
+    ".gif",
+    ".gz",
+    ".ico",
+    ".iso",
+    ".jar",
+    ".jpeg",
+    ".jpg",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".otf",
+    ".png",
+    ".pyc",
+    ".rar",
+    ".sqlite",
+    ".sqlite3",
+    ".tar",
+    ".ttf",
+    ".wav",
+    ".webm",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".zip",
+}
 
 
 def classify(path: Path) -> tuple[Kind, str | None] | None:
@@ -69,6 +142,16 @@ def classify(path: Path) -> tuple[Kind, str | None] | None:
     suffix = path.suffix.lower()
     if suffix in CODE_LANGUAGES:
         return "code", CODE_LANGUAGES[suffix]
+    if suffix in CODE_EXTENSIONS_WITHOUT_LANGUAGE:
+        return "code", None
     if suffix in DOC_EXTENSIONS:
+        return "doc", None
+    if suffix in BINARY_EXTENSIONS:
+        return None
+    if not suffix and path.name.lower() in {"dockerfile", "makefile", "gemfile", "rakefile"}:
+        return "code", None
+    # Fallback: attempt unknown extensions as text docs. The reader will reject
+    # binary/unreadable files, but this avoids dropping project-specific formats.
+    if suffix:
         return "doc", None
     return None

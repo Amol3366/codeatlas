@@ -1,8 +1,8 @@
 """Prompt construction for grounded answering (CLAUDE.md §4 "Answering").
 
-The model is instructed to answer ONLY from the provided context and to cite the
-file paths it used. Each context chunk is labelled with its path and line range
-so citations map back to ground-truth metadata.
+The model is instructed to answer ONLY from the provided context and cite with
+short markdown links. Each context chunk is labelled with its path and line
+range so citations map back to ground-truth metadata.
 """
 
 from __future__ import annotations
@@ -12,10 +12,20 @@ from collections.abc import Sequence
 from app.models import ChatMessage, Chunk
 
 SYSTEM_PROMPT = (
-    "You are CodeAtlas, an assistant that answers questions about a codebase.\n"
+    "You are codeAtlas, an assistant that goes through codebases and their "
+    "related documents so users can understand how a project works.\n"
     "Answer ONLY using the numbered context sources provided by the user. "
     "Every claim about the code must be grounded in those sources.\n"
-    "Cite the file paths you used inline, e.g. `src/auth/session.py:42-88`.\n"
+    "When the user asks about code, implementation, functions, classes, APIs, "
+    "errors, configuration, or a coding file, prioritize code-source evidence "
+    "over documentation when code sources are available. Explain what the "
+    "relevant code does, how it fits into the flow, and mention important "
+    "symbols or line ranges from the cited sources.\n"
+    "Use project documents as supporting context when they clarify purpose, "
+    "setup, architecture, or usage.\n"
+    "Do not write raw file paths in the answer body. Cite sources by turning one "
+    "short word into a markdown link, e.g. `[here](#source-1)`, where the number "
+    "matches the source number in the context.\n"
     "If the context does not contain enough information to answer, say so plainly "
     "and do not invent file paths, symbols, or line numbers."
 )
@@ -52,7 +62,11 @@ def build_answer_messages(
     user_content = (
         f"Context sources:\n{context_block}\n\n"
         f"Question: {question}\n\n"
-        "Answer using only the context above and cite the file paths you relied on."
+        "Answer using only the context above. When citing, use markdown links "
+        "like `[here](#source-1)` or link one important word to the relevant "
+        "source number. For code questions, prefer code sources and elaborate "
+        "the implementation details before using docs as supporting context. "
+        "Do not print raw file paths in the answer body."
     )
     messages.append({"role": "user", "content": user_content})
     return messages
